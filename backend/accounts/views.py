@@ -67,14 +67,26 @@ class RefreshView(TokenRefreshView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        tokens = {
-            'access': data.get('access'),
-            'refresh': data.get('refresh') or request.data.get('refresh')
-        }
-        return Response({'tokens': tokens}, status=status.HTTP_200_OK)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            tokens = {
+                'access': data.get('access'),
+                'refresh': data.get('refresh') or request.data.get('refresh')
+            }
+            return Response({'tokens': tokens}, status=status.HTTP_200_OK)
+        except Exception as e:
+            # Log the error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Token refresh error: {str(e)}", exc_info=True)
+            
+            # Return a more helpful error message
+            return Response(
+                {'error': 'Token refresh failed', 'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 @api_view(['GET'])
