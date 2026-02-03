@@ -256,14 +256,15 @@ if not REDIS_AVAILABLE:
 # JWT Configuration
 from datetime import timedelta
 # Determine if we can use JWT blacklist (requires Redis)
-# Only enable blacklist if Redis is available, otherwise tokens won't be properly invalidated
+# Only enable blacklist if Redis is available AND working, otherwise tokens won't be properly invalidated
+# IMPORTANT: Disable blacklist if Redis fails to prevent 500 errors on token refresh
 _use_blacklist = REDIS_AVAILABLE
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(hours=12),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': _use_blacklist,  # Only if Redis is available
+    'BLACKLIST_AFTER_ROTATION': _use_blacklist,  # Only if Redis is available and working
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
