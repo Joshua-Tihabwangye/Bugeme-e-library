@@ -5,10 +5,12 @@ import StatCard from '../../components/cards/StatCard';
 import LoadingOverlay from '../../components/feedback/LoadingOverlay';
 
 const HomePage = () => {
+  // Load both queries in parallel for faster initial render
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
     queryFn: getCategories,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000, // 15 minutes - categories change rarely
+    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
   });
   // Handle both array (if pagination disabled) and paginated response
   const categories = Array.isArray(categoriesData)
@@ -16,8 +18,9 @@ const HomePage = () => {
     : (categoriesData as any)?.results ?? [];
   const { data: books, isLoading } = useQuery({
     queryKey: ['books', 'featured'],
-    queryFn: () => getBooks({ ordering: '-view_count', page: 1 }),
+    queryFn: () => getBooks({ ordering: '-view_count', page: 1, page_size: 4 }), // Only fetch 4 books needed
     staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   return (

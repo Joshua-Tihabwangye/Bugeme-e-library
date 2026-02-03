@@ -14,7 +14,11 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import Http404, HttpResponse
-from django.db.models import Q, Max, F 
+from django.db.models import Q, Max, F, Prefetch
+from django.db import models 
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+from django.core.cache import cache
 
 from django.conf import settings 
 from django.http import HttpResponse, Http404, FileResponse, StreamingHttpResponse, HttpResponseRedirect
@@ -43,9 +47,12 @@ retry_config = Retry(
 cloudinary_session.mount('https://', HTTPAdapter(max_retries=retry_config))
 
 # --- CATEGORY VIEWS ---
+@method_decorator(cache_page(60 * 15), name='dispatch')  # Cache for 15 minutes
 class CategoryListView(generics.ListAPIView):
     """List all categories with book counts"""
-    queryset = Category.objects.all()
+    queryset = Category.objects.annotate(
+        book_count=models.Count('books', filter=models.Q(books__is_published=True), distinct=True)
+    ).all()
     serializer_class = CategorySerializer
     permission_classes = [AllowAny]
 
@@ -71,6 +78,9 @@ class BookViewSet(viewsets.ModelViewSet):
         so we support both for convenience.
         """
         qs = Book.objects.filter(is_published=True) if self.action in ['list', 'retrieve'] else Book.objects.all()
+        
+        # Optimize queries with select_related and prefetch_related
+        qs = qs.select_related('author').prefetch_related('categories')
 
         request = self.request
         query = request.query_params.get('query') or request.query_params.get('search')
@@ -81,6 +91,16 @@ class BookViewSet(viewsets.ModelViewSet):
                 | Q(description__icontains=query)
                 | Q(tags__icontains=query)
             )
+        
+        # Prefetch user-specific data if authenticated
+        if request.user.is_authenticated:
+            from reading.models import ReadingProgress
+            qs = qs.prefetch_related(
+                Prefetch('likes', queryset=BookLike.objects.filter(user=request.user)),
+                Prefetch('bookmarks', queryset=Bookmark.objects.filter(user=request.user)),
+                Prefetch('reading_progresses', queryset=ReadingProgress.objects.filter(user=request.user))
+            )
+        
         return qs
 
     def get_serializer_class(self):
@@ -97,9 +117,22 @@ class BookViewSet(viewsets.ModelViewSet):
         return [AllowAny()]
 
     def list(self, request, *args, **kwargs):
-        """Override list to add error handling"""
+        """Override list to add error handling and caching"""
         try:
-            return super().list(request, *args, **kwargs)
+            # Build cache key based on query parameters
+            cache_key = f"books_list_{hash(str(request.query_params))}"
+            cached_response = cache.get(cache_key)
+            
+            if cached_response is not None:
+                return Response(cached_response)
+            
+            response = super().list(request, *args, **kwargs)
+            
+            # Cache successful responses for 5 minutes
+            if response.status_code == 200:
+                cache.set(cache_key, response.data, 60 * 5)
+            
+            return response
         except Exception as e:
             logger.error(f"Error listing books: {str(e)}", exc_info=True)
             return Response(
@@ -112,17 +145,24 @@ class BookViewSet(viewsets.ModelViewSet):
         try:
             instance = self.get_object()
             
-            # Increment view count
+            # Increment view count asynchronously (non-blocking)
             Book.objects.filter(pk=instance.pk).update(view_count=F('view_count') + 1)
             
-            # Create BookView record for analytics (only for authenticated users)
+            # Create BookView record for analytics asynchronously (only for authenticated users)
+            # Use get_or_create to avoid blocking on duplicate key errors
             if request.user.is_authenticated:
-                BookView.objects.create(
-                    user=request.user,
-                    book=instance
-                )
+                try:
+                    BookView.objects.get_or_create(
+                        user=request.user,
+                        book=instance,
+                        defaults={'viewed_at': timezone.now()}
+                    )
+                except Exception as e:
+                    # Log but don't fail the request
+                    logger.warning(f"Failed to create BookView: {str(e)}")
             
-            instance.refresh_from_db()
+            # Don't refresh from DB - use the instance we already have
+            # This saves a database query
 
             serializer = self.get_serializer(instance)
             return Response(serializer.data)

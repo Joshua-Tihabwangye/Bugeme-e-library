@@ -10,15 +10,12 @@ User = get_user_model()
 # CATEGORY SERIALIZER
 # ---------------------------
 class CategorySerializer(serializers.ModelSerializer):
-    book_count = serializers.SerializerMethodField()
+    book_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Category
         fields = ['id', 'name', 'slug', 'description', 'book_count', 'created_at']
-        read_only_fields = ['id', 'created_at']
-
-    def get_book_count(self, obj):
-        return obj.books.filter(is_published=True).count()
+        read_only_fields = ['id', 'created_at', 'book_count']
 
 
 # ---------------------------
@@ -46,12 +43,18 @@ class BookListSerializer(serializers.ModelSerializer):
     def get_is_liked(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
+            # Use prefetched data if available
+            if hasattr(obj, 'likes') and hasattr(obj.likes, 'all'):
+                return obj.likes.all().exists()
             return obj.likes.filter(user=request.user).exists()
         return False
 
     def get_is_bookmarked(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
+            # Use prefetched data if available
+            if hasattr(obj, 'bookmarks') and hasattr(obj.bookmarks, 'all'):
+                return obj.bookmarks.all().exists()
             return obj.bookmarks.filter(user=request.user).exists()
         return False
 
@@ -59,8 +62,13 @@ class BookListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             try:
-                from reading.models import ReadingProgress
-                progress = ReadingProgress.objects.filter(user=request.user, book=obj).first()
+                # Use prefetched data if available
+                if hasattr(obj, 'reading_progresses') and hasattr(obj.reading_progresses, 'all'):
+                    progress = obj.reading_progresses.all().first()
+                else:
+                    from reading.models import ReadingProgress
+                    progress = ReadingProgress.objects.filter(user=request.user, book=obj).first()
+                
                 if progress:
                     return {
                         'percent': progress.percent,
