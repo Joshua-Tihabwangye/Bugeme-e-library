@@ -73,13 +73,21 @@ class Book(models.Model):
                               help_text="Direct Cloudinary URL for the file")
     
     
-    view_count = models.PositiveIntegerField(default=0)
-    like_count = models.PositiveIntegerField(default=0)
+    view_count = models.PositiveIntegerField(default=0, db_index=True)
+    like_count = models.PositiveIntegerField(default=0, db_index=True)
     bookmark_count = models.PositiveIntegerField(default=0)
     
-    is_published = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    is_published = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['is_published', '-view_count']),
+            models.Index(fields=['is_published', '-created_at']),
+            models.Index(fields=['is_published', '-like_count']),
+            models.Index(fields=['author', 'is_published']),
+        ]
 
     def save(self, *args, **kwargs):
         """Override save to populate Cloudinary metadata with canonical values"""
