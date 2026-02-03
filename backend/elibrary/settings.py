@@ -182,13 +182,81 @@ REST_FRAMEWORK = {
     ],
 }
 
+# CACHE Configuration - Use Redis if available, fallback to local memory cache
+# IMPORTANT: This must be defined BEFORE JWT config because JWT blacklist needs Redis
+REDIS_URL = os.getenv('REDIS_URL', '')
+REDIS_AVAILABLE = False
+
+# Try to connect to Redis if URL is provided
+if REDIS_URL:
+    try:
+        import redis
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Test connection with timeout
+        r = redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+            decode_responses=False
+        )
+        r.ping()
+        REDIS_AVAILABLE = True
+        
+        # Redis is working - use it
+        CACHES = {
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": REDIS_URL,
+                "KEY_PREFIX": "elibrary",
+                "TIMEOUT": 300,
+                "OPTIONS": {
+                    "SOCKET_CONNECT_TIMEOUT": 3,
+                    "SOCKET_TIMEOUT": 3,
+                }
+            }
+        }
+        RATELIMIT_USE_CACHE = "default"
+        RATELIMIT_ENABLE = True
+        logger.info("✅ Redis cache configured successfully")
+        
+    except ImportError:
+        REDIS_AVAILABLE = False
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("❌ Redis package not installed. Install with: pip install redis")
+        
+    except Exception as e:
+        REDIS_AVAILABLE = False
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"⚠️ Redis connection failed: {e}. Using LocMemCache fallback.")
+        logger.warning("⚠️ JWT blacklist will be disabled. Set REDIS_URL correctly for production.")
+
+# Fallback to LocMemCache if Redis not available
+if not REDIS_AVAILABLE:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "unique-snowflake",
+            "TIMEOUT": 300,
+        }
+    }
+    RATELIMIT_ENABLE = False
+    SILENCED_SYSTEM_CHECKS = ['django_ratelimit.E003', 'django_ratelimit.W001']
+
 # JWT Configuration
 from datetime import timedelta
+# Determine if we can use JWT blacklist (requires Redis)
+# Only enable blacklist if Redis is available, otherwise tokens won't be properly invalidated
+_use_blacklist = REDIS_AVAILABLE
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(hours=12),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    'BLACKLIST_AFTER_ROTATION': _use_blacklist,  # Only if Redis is available
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
@@ -256,10 +324,6 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
-# Rate Limiting
-RATELIMIT_ENABLE = True
-RATELIMIT_USE_CACHE = 'default'
-
 # Logging
 LOGGING = {
     'version': 1,
@@ -279,33 +343,6 @@ LOGGING = {
         },
     },
 }
-
-# CACHE Configuration - Use Redis if available, fallback to local memory cache
-REDIS_URL = os.getenv('REDIS_URL', '')
-
-# Only use Redis in production (when REDIS_URL is set to a real server)
-if REDIS_URL and not REDIS_URL.startswith('redis://127.0.0.1'):
-    CACHES = {
-        "default": {
-            "BACKEND": "django.core.cache.backends.redis.RedisCache",
-            "LOCATION": REDIS_URL,
-        }
-    }
-    # Enable rate limiting with Redis
-    RATELIMIT_USE_CACHE = "default"
-    RATELIMIT_ENABLE = True
-else:
-    # Fallback for local development - use LocMem cache
-    CACHES = {
-        "default": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-            "LOCATION": "unique-snowflake",
-        }
-    }
-    # Disable rate limiting in development (requires shared cache)
-    RATELIMIT_ENABLE = False
-    # Silence django-ratelimit checks in development
-    SILENCED_SYSTEM_CHECKS = ['django_ratelimit.E003', 'django_ratelimit.W001']
 
 
 # Cloudinary credentials (load from environment or secret manager)
