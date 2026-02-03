@@ -198,12 +198,14 @@ if REDIS_URL:
         import logging
         logger = logging.getLogger(__name__)
         
-        # Test connection with timeout
+        # Test connection with timeout - handle both redis:// and rediss:// (SSL)
+        # Note: rediss:// requires ssl_cert_reqs=None for some providers
         r = redis.from_url(
             REDIS_URL,
-            socket_connect_timeout=3,
-            socket_timeout=3,
-            decode_responses=False
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            decode_responses=False,
+            ssl_cert_reqs=None  # Allow self-signed certificates for cloud Redis
         )
         r.ping()
         REDIS_AVAILABLE = True
@@ -216,8 +218,8 @@ if REDIS_URL:
                 "KEY_PREFIX": "elibrary",
                 "TIMEOUT": 300,
                 "OPTIONS": {
-                    "SOCKET_CONNECT_TIMEOUT": 3,
-                    "SOCKET_TIMEOUT": 3,
+                    "SOCKET_CONNECT_TIMEOUT": 5,
+                    "SOCKET_TIMEOUT": 5,
                 }
             }
         }
@@ -235,8 +237,9 @@ if REDIS_URL:
         REDIS_AVAILABLE = False
         import logging
         logger = logging.getLogger(__name__)
-        logger.warning(f"⚠️ Redis connection failed: {e}. Using LocMemCache fallback.")
-        logger.warning("⚠️ JWT blacklist will be disabled. Set REDIS_URL correctly for production.")
+        logger.warning(f"⚠️ Redis connection failed: {type(e).__name__}: {str(e)}")
+        logger.warning("⚠️ Using LocMemCache fallback. JWT blacklist will be disabled.")
+        logger.warning("⚠️ App will work but without caching. Fix REDIS_URL for production.")
 
 # Fallback to LocMemCache if Redis not available
 if not REDIS_AVAILABLE:
@@ -348,6 +351,7 @@ LOGGING = {
     },
 }
 
+<<<<<<<<< Temporary merge branch 1
 # CACHE Configuration - Use Redis from cloud service (like NEON DB and Cloudinary)
 # For production: Use cloud Redis (Upstash, Redis Cloud, Railway, etc.)
 # For local dev: Can use localhost Redis or LocMemCache fallback
@@ -432,6 +436,8 @@ else:
     RATELIMIT_ENABLE = False
     SILENCED_SYSTEM_CHECKS = ['django_ratelimit.E003', 'django_ratelimit.W001']
 
+=========
+>>>>>>>>> Temporary merge branch 2
 
 # Cloudinary credentials (load from environment or secret manager)
 cloudinary.config(
