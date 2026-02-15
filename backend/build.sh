@@ -4,6 +4,7 @@ set -o errexit
 
 # Install dependencies
 pip install --upgrade pip
+pip install djangorestframework-simplejwt==5.5.1
 pip install -r requirements.txt
 
 # Collect static files
