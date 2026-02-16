@@ -12,7 +12,6 @@ django-filter==23.5
 django-ratelimit==4.1.0
 djangorestframework==3.14.0
 djangorestframework-simplejwt==5.5.1
-
 drf-spectacular==0.26.5
 gunicorn==21.2.0
 idna==3.11
@@ -31,12 +30,10 @@ redis==5.0.1
 referencing==0.37.0
 requests==2.32.5
 rpds-py==0.30.0
-setuptools<81
+setuptools==59.6.0  # Pinned to ensure pkg_resources is available
 six==1.17.0
 sqlparse==0.5.5
 typing_extensions==4.15.0
 uritemplate==4.2.0
 urllib3==2.6.3
 whitenoise==6.6.0
-
-
