@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
-import setuptools  # Ensures pkg_resources is available
 
 from urllib.parse import urlparse, parse_qsl
 

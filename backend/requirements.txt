@@ -1,4 +1,4 @@
-# Forcing rebuild to pick up simplejwt 5.5.1
+# Updated for Python 3.12 compatibility - removed setuptools/pkg_resources workarounds
 asgiref==3.11.1
 attrs==25.4.0
 certifi==2026.1.4
@@ -30,7 +30,7 @@ redis==5.0.1
 referencing==0.37.0
 requests==2.32.5
 rpds-py==0.30.0
-setuptools==59.6.0  # Pinned to ensure pkg_resources is available
+setuptools>=70.0.0  # Modern version compatible with Python 3.12+
 six==1.17.0
 sqlparse==0.5.5
 typing_extensions==4.15.0
