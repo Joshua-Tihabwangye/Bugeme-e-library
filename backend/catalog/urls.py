@@ -19,4 +19,7 @@ urlpatterns = [
     path('books/<int:book_id>/like/', views.toggle_like, name='book-like'),
     path('books/<int:book_id>/bookmark/', views.toggle_bookmark, name='book-bookmark'),
     path('search/suggestions/', views.search_suggestions, name='search-suggestions'),
+
+    #AI-powered semantic search endpoint
+    path('search/semantic/', views.semantic_search, name='semantic-search'),
 ]

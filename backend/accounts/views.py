@@ -6,9 +6,11 @@ from datetime import timedelta
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .models import User
 from .serializers import UserSerializer, UserRegistrationSerializer, CustomTokenObtainPairSerializer
 from .permissions import IsAdminRole
+import logging
 
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -18,6 +20,8 @@ from .serializers import AdminUserListSerializer
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import PasswordResetToken
+
+logger = logging.getLogger(__name__)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -43,9 +47,6 @@ class RegisterView(generics.CreateAPIView):
                 }
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
-            # Log the error for debugging
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Registration error: {str(e)}", exc_info=True)
             
             # Return user-friendly error message
@@ -76,15 +77,21 @@ class RefreshView(TokenRefreshView):
                 'refresh': data.get('refresh') or request.data.get('refresh')
             }
             return Response({'tokens': tokens}, status=status.HTTP_200_OK)
+        except (InvalidToken, TokenError) as e:
+            logger.warning(f"Token refresh rejected: {str(e)}")
+            return Response(
+                {
+                    'error': 'Refresh token expired or invalid',
+                    'detail': 'Please sign in again.',
+                    'clear_tokens': True,
+                },
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         except Exception as e:
-            # Log the error for debugging
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Token refresh error: {str(e)}", exc_info=True)
             
-            # Return a more helpful error message
             return Response(
-                {'error': 'Token refresh failed', 'detail': str(e)},
+                {'error': 'Token refresh failed'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -125,8 +132,6 @@ def update_profile(request):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Profile update error for user {request.user.id}: {str(e)}", exc_info=True)
         
         return Response(

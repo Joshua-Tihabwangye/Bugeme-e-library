@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.text import slugify
 from django.contrib.auth import get_user_model
+from pgvector.django import VectorField
 
 
 # Get the custom User model defined in the 'accounts' app
@@ -80,7 +81,14 @@ class Book(models.Model):
     is_published = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
+    #AI related models
+    read_count = models.PositiveIntegerField(default=0)
+    ai_summary = models.TextField(blank=True, null=True)
+    ai_tags = models.JSONField(default=list, help_text="List of AI-generated tags") or []
+    trending_score = models.FloatField(default=0.0, db_index=True)
+    embedding_vector = VectorField(dimensions=768, null=True, blank=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['is_published', '-view_count']),
@@ -118,6 +126,22 @@ class Book(models.Model):
 
     def __str__(self):
         return self.title
+
+class BookEvent(models.Model):
+    book_id = models.IntegerField()
+    event_type = models.CharField(max_length=225)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    user_id = models.IntegerField()
+
+    class Meta:
+        verbose_name = "Book Event"
+        verbose_name_plural = "Book Events"
+        indexes = [
+            models.Index(fields=['book_id', 'event_type']),
+            models.Index(fields=['user_id', 'event_type']),
+        ]
+        def __str__(self):
+            return f"Event {self.event_type} for Book ID {self.book_id} by User ID {self.user_id} at {self.timestamp}"
 
 
 class BookLike(models.Model):
