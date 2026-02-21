@@ -1,5 +1,4 @@
 import os
-import re
 import logging 
 import cloudinary 
 import requests
@@ -7,7 +6,7 @@ from requests.adapters import HTTPAdapter, Retry
 import time
 from urllib.parse import urlparse
 from django.utils import timezone
-from django.shortcuts import get_object_or_404   
+from django.shortcuts import get_object_or_404, render   
 from rest_framework import generics, status, filters, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -31,6 +30,10 @@ from .serializers import (
 from accounts.permissions import IsAdminRole
 from rest_framework.parsers import MultiPartParser, FormParser
 from analytics.models import BookView
+
+from .ai_utils import get_embedding
+from pgvector.django import CosineDistance
+from .models import Book
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -388,3 +391,25 @@ def book_file_url(request, book_id):
     if not book.file:
         return Response({'error': 'No file for this book'}, status=404)
     return Response({'url': book.file.url})
+
+
+#========================= AI integration in the system ==========================
+#Changing querries into vectors to be stored in the database and used for semantic search with cosine similarity. This is a simple implementation and can be expanded with more complex logic as needed.
+def semantic_search(request):
+    query = request.GET.get('q')
+    results = []
+    
+    if query:
+        # 1. Turn the user's search words into a vector
+        query_vector = get_embedding(query)
+        
+        # 2. Find the top 5 most similar books using Cosine Similarity
+        # Lower distance = higher similarity
+        results = Book.objects.annotate(
+            distance=CosineDistance('embedding_vector', query_vector)
+        ).order_by('distance')[:5]
+        
+    return render(request, 'catalog/search.html', {
+        'results': results, 
+        'query': query
+    })
