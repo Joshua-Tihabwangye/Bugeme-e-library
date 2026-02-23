@@ -88,6 +88,7 @@ class Book(models.Model):
     ai_tags = models.JSONField(default=list, help_text="List of AI-generated tags") or []
     trending_score = models.FloatField(default=0.0, db_index=True)
     embedding_vector = VectorField(dimensions=768, null=True, blank=True)
+    visual_description = models.TextField(blank=True, null=True)
 
     class Meta:
         indexes = [
