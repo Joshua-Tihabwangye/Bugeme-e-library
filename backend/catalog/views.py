@@ -1,5 +1,6 @@
 import os
 import logging 
+import re
 import cloudinary 
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -15,6 +16,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.http import Http404, HttpResponse
 from django.db.models import Q, Max, F, Prefetch
 from django.db import models 
+from django.db.models.functions import Cast
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
 from django.views.decorators.cache import cache_page
 from django.utils.decorators import method_decorator
 from django.core.cache import cache
@@ -74,6 +77,92 @@ class BookViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'view_count', 'like_count', 'title']
     ordering = ['-created_at']
 
+    def _is_semantic_mode(self, request):
+        mode = (
+            request.query_params.get('mode')
+            or request.query_params.get('search_mode')
+            or ''
+        ).strip().lower()
+        return mode in {'semantic', 'vector', 'ai'}
+
+    def _searchable_clauses(self, text):
+        return (
+            Q(title__icontains=text)
+            | Q(author__name__icontains=text)
+            | Q(description__icontains=text)
+            | Q(tags__icontains=text)
+            | Q(ai_summary__icontains=text)
+            | Q(ai_tags__icontains=text)
+        )
+
+    def _keyword_filter(self, qs, query):
+        normalized_query = " ".join(query.split())
+        terms = [term for term in re.split(r"\s+", normalized_query) if term]
+        if not terms:
+            return qs.none()
+
+        # Match the full phrase OR require every token to appear in searchable fields.
+        all_terms_clause = Q()
+        for term in terms:
+            all_terms_clause &= self._searchable_clauses(term)
+
+        return qs.filter(
+            self._searchable_clauses(normalized_query) | all_terms_clause
+        ).distinct()
+
+    def _semantic_filter(self, qs, query, strict=False):
+        query_vector = get_embedding(query)
+        scored_qs = (
+            qs.filter(embedding_vector__isnull=False)
+            .annotate(distance=CosineDistance('embedding_vector', query_vector))
+            .order_by('distance')
+        )
+
+        # Relevance controls:
+        # - strict=True: used for keyword-fallback, so only return sufficiently close matches.
+        # - strict=False: explicit semantic mode can be broader.
+        max_distance = 0.48 if strict else 0.62
+        top_k = 12
+
+        filtered_qs = scored_qs.filter(distance__lte=max_distance)
+        candidate_ids = list(filtered_qs.values_list('id', flat=True)[:top_k])
+
+        # In strict fallback mode, never return weak matches.
+        if strict and not candidate_ids:
+            return scored_qs.filter(pk__in=[])
+
+        # In explicit semantic mode, keep behavior broad if no strong matches.
+        if not strict and not candidate_ids:
+            candidate_ids = list(scored_qs.values_list('id', flat=True)[:top_k])
+
+        if not candidate_ids:
+            return scored_qs.filter(pk__in=[])
+
+        return scored_qs.filter(pk__in=candidate_ids).order_by('distance')
+
+    def _fulltext_filter(self, qs, query):
+        # Build a weighted full-text index on the fly from the fields we persist.
+        qs = qs.annotate(
+            tags_text=Cast('tags', models.TextField()),
+            ai_tags_text=Cast('ai_tags', models.TextField()),
+        ).annotate(
+            search_vector=(
+                SearchVector('title', weight='A', config='english')
+                + SearchVector('author__name', weight='A', config='english')
+                + SearchVector('description', weight='B', config='english')
+                + SearchVector('ai_summary', weight='B', config='english')
+                + SearchVector('tags_text', weight='A', config='simple')
+                + SearchVector('ai_tags_text', weight='A', config='simple')
+            )
+        )
+
+        query_obj = SearchQuery(query, search_type='websearch', config='english')
+        return (
+            qs.annotate(search_rank=SearchRank(F('search_vector'), query_obj))
+            .filter(search_rank__gte=0.01)
+            .order_by('-search_rank', '-view_count')
+        )
+
     def get_queryset(self):
         """
         Base queryset with optional free-text search using ?query=...
@@ -86,14 +175,55 @@ class BookViewSet(viewsets.ModelViewSet):
         qs = qs.select_related('author').prefetch_related('categories')
 
         request = self.request
-        query = request.query_params.get('query') or request.query_params.get('search')
+        query = (request.query_params.get('query') or request.query_params.get('search') or '').strip()
+        use_semantic = self._is_semantic_mode(request)
         if query:
-            qs = qs.filter(
-                Q(title__icontains=query)
-                | Q(author__name__icontains=query)
-                | Q(description__icontains=query)
-                | Q(tags__icontains=query)
-            )
+            if use_semantic:
+                try:
+                    qs = self._semantic_filter(qs, query, strict=False)
+                    # Keep semantic ranking as default unless caller explicitly sets ordering.
+                    self.ordering = ['distance']
+                except Exception:
+                    logger.warning("Semantic search failed; falling back to keyword search.", exc_info=True)
+                    qs = self._keyword_filter(qs, query)
+                    self.ordering = ['-view_count', '-created_at']
+            else:
+                keyword_qs = self._keyword_filter(qs, query)
+                if keyword_qs.exists():
+                    qs = keyword_qs
+                    self.ordering = ['-view_count', '-created_at']
+                else:
+                    # Fallback 1: weighted full-text search (better token handling).
+                    try:
+                        fulltext_qs = self._fulltext_filter(qs, query)
+                        if fulltext_qs.exists():
+                            qs = fulltext_qs
+                            self.ordering = ['-search_rank', '-view_count']
+                        else:
+                            # Fallback 2: semantic similarity (strict).
+                            query_has_signal = len(query) >= 3
+                            if query_has_signal:
+                                qs = self._semantic_filter(qs, query, strict=True)
+                                self.ordering = ['distance']
+                            else:
+                                qs = keyword_qs
+                                self.ordering = ['-view_count', '-created_at']
+                    except Exception:
+                        logger.warning("Fallback search failed; returning keyword result set.", exc_info=True)
+                        try:
+                            query_has_signal = len(query) >= 3
+                            if query_has_signal:
+                                qs = self._semantic_filter(qs, query, strict=True)
+                                self.ordering = ['distance']
+                            else:
+                                qs = keyword_qs
+                                self.ordering = ['-view_count', '-created_at']
+                        except Exception:
+                            logger.warning("Semantic fallback failed; returning keyword result set.", exc_info=True)
+                            qs = keyword_qs
+                            self.ordering = ['-view_count', '-created_at']
+        else:
+            self.ordering = ['-created_at']
         
         # Prefetch user-specific data if authenticated
         if request.user.is_authenticated:
@@ -123,7 +253,7 @@ class BookViewSet(viewsets.ModelViewSet):
         """Override list to add error handling and caching"""
         try:
             # Build cache key based on query parameters
-            cache_key = f"books_list_{hash(str(request.query_params))}"
+            cache_key = f"books_list_v2_{hash(str(request.query_params))}"
             cached_response = cache.get(cache_key)
             
             if cached_response is not None:
@@ -344,7 +474,7 @@ def search_suggestions(request):
         return Response({'suggestions': []})
     
     books = Book.objects.filter(
-        Q(title__icontains=query) | Q(author__icontains=query),
+        Q(title__icontains=query) | Q(author__name__icontains=query),
         is_published=True
     ).order_by('-view_count')[:10]
     
@@ -370,11 +500,19 @@ def search_suggestions(request):
     ).values_list('tags', flat=True).distinct()
 
     unique_tags = set()
-    for tag_string in tag_suggestions:
-        if tag_string:
-            for tag in [t.strip() for t in tag_string.split(',')]:
-                if query.lower() in tag.lower():
-                    unique_tags.add(tag)
+    for tag_value in tag_suggestions:
+        if not tag_value:
+            continue
+
+        # tags are stored as JSON lists; handle string fallback defensively.
+        if isinstance(tag_value, list):
+            candidates = [str(t).strip() for t in tag_value if str(t).strip()]
+        else:
+            candidates = [t.strip() for t in str(tag_value).split(',') if t.strip()]
+
+        for tag in candidates:
+            if query.lower() in tag.lower():
+                unique_tags.add(tag)
     
     for tag in list(unique_tags)[:5]:
         suggestions.append({
@@ -413,3 +551,4 @@ def semantic_search(request):
         'results': results, 
         'query': query
     })
+
