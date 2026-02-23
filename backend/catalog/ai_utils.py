@@ -6,6 +6,8 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+EMBEDDING_MODEL = "gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 768
 
 if not GEMINI_KEY:
     # This will help you stop the script early if the key is still missing
@@ -25,7 +27,22 @@ def get_embedding(text: str) -> list[float]:
         A list of floats representing the embedding vector
     """
     result = client.models.embed_content(
-        model="gemini-embedding-001",
+        model=EMBEDDING_MODEL,
         contents=text,
+        config={"output_dimensionality": EMBEDDING_DIMENSIONS},
     )
-    return result.embeddings[0].values
+
+    if not result.embeddings:
+        raise ValueError("Embedding API returned no embeddings.")
+
+    values = result.embeddings[0].values
+    if len(values) == EMBEDDING_DIMENSIONS:
+        return values
+
+    # Safety fallback in case provider ignores output_dimensionality.
+    if len(values) > EMBEDDING_DIMENSIONS:
+        return values[:EMBEDDING_DIMENSIONS]
+
+    raise ValueError(
+        f"Embedding dimension too small: expected at least {EMBEDDING_DIMENSIONS}, got {len(values)}"
+    )
