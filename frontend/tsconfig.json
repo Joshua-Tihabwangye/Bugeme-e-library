@@ -6,6 +6,10 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "lucide-react": ["src/lib/types/lucide-react-shim.d.ts"]
+    },
     "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,
