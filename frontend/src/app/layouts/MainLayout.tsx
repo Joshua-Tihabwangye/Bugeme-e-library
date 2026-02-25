@@ -8,6 +8,7 @@ import bugemaLogo from '../../../bugema.webp';
 const navItems = [
   { label: 'Home', to: '/' },
   { label: 'Catalog', to: '/catalog' },
+  { label: 'Libris AI', to: '/libris-ai' },
   { label: 'Dashboard', to: '/dashboard', protected: true },
 ];
 

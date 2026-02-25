@@ -1,0 +1,4 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Link } from 'react-router-dom';
+const UnauthorizedPage = () => (_jsxs("div", { className: "mx-auto max-w-md text-center", children: [_jsx("p", { className: "text-sm uppercase tracking-[0.3em] text-red-300", children: "Restricted" }), _jsx("h1", { className: "mt-4 text-3xl font-semibold text-white", children: "Insufficient permissions" }), _jsx("p", { className: "mt-2 text-slate-400", children: "You need elevated privileges to see this page. Please log in with an administrator account." }), _jsxs("div", { className: "mt-6 flex items-center justify-center gap-3", children: [_jsx(Link, { to: "/", className: "btn-primary", children: "Back Home" }), _jsx(Link, { to: "/login", className: "text-sm font-semibold text-slate-300", children: "Switch account \u2192" })] })] }));
+export default UnauthorizedPage;
