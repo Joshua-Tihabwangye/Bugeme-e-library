@@ -20,6 +20,7 @@ const AnalyticsPagesPage = lazy(() => import('../app/pages/analytics/AnalyticsPa
 const AnalyticsCompletionPage = lazy(() => import('../app/pages/analytics/AnalyticsCompletionPage'));
 const CompletedBooksPage = lazy(() => import('../app/pages/CompletedBooksPage'));
 const ProfilePage = lazy(() => import('../app/pages/ProfilePage'));
+const LibrisAIPage = lazy(() => import('../app/pages/LibrisAIPage'));
 const LoginPage = lazy(() => import('../app/pages/LoginPage'));
 const RegisterPage = lazy(() => import('../app/pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('../app/pages/ForgotPasswordPage'));
@@ -73,6 +74,7 @@ const AppRoutes = () => (
             </ProtectedRoute>
           }
         />
+        <Route path="libris-ai" element={<LibrisAIPage />} />
         <Route
           path="analytics"
           element={

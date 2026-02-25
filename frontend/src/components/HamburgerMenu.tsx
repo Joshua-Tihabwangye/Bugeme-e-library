@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Menu, X, Home, BookOpen, LayoutDashboard, Shield } from 'lucide-react';
+import { Menu, X, Home, BookOpen, LayoutDashboard, Shield, Sparkles } from 'lucide-react';
 import { useAuthStore } from '../lib/store/auth';
 
 const HamburgerMenu = () => {
@@ -24,6 +24,7 @@ const HamburgerMenu = () => {
   const navItems = [
     { label: 'Home', to: '/', icon: Home },
     { label: 'Catalog', to: '/catalog', icon: BookOpen },
+    { label: 'Libris AI', to: '/libris-ai', icon: Sparkles },
     { label: user?.role === 'ADMIN' ? 'Dashboard' : 'My Dashboard', to: user?.role === 'ADMIN' ? '/admin' : '/dashboard', icon: user?.role === 'ADMIN' ? Shield : LayoutDashboard, protected: true },
   ];
 
