@@ -13,6 +13,7 @@ export const createCategory = async (payload: { name: string; description?: stri
 
 export interface BookFilters {
   page?: number;
+  page_size?: number;
   query?: string;
   categories__id?: number;
   ordering?: string;
