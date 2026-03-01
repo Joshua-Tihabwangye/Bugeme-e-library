@@ -1,0 +1,1 @@
+import{b as t}from"./index-C_R6iRdk.js";const e=async()=>(await t.get("/subscriptions/plans/")).data,r=async s=>(await t.post("/subscriptions/subscribe/",s)).data,o=async()=>(await t.get("/subscriptions/me/")).data;export{e as a,r as c,o as g};
